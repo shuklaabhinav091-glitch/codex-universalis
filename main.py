@@ -412,11 +412,12 @@ async def ws_endpoint(websocket: WebSocket):
 
             # Plain text note — existing translation path
             original = data
+            en = translate_safe(original, 'en')
             mr = translate_safe(original, 'mr')
             hi = translate_safe(original, 'hi')
             payload = {
                 "type": "note",
-                "en": original,
+                "en": en,
                 "mr": mr,
                 "hi": hi,
                 "ts": time.time()
