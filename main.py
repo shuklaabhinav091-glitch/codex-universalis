@@ -2,6 +2,7 @@ import os
 import re
 import time
 import json
+from typing import Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from pathlib import Path
@@ -47,6 +48,17 @@ LEXICON: dict[str, dict[str, str]] = {
     },
 }
 
+# ---------------------------------------------------------------------------
+# Reverse lexicon: Marathi/Hindi -> English (code-switching to English)
+# ---------------------------------------------------------------------------
+_REVERSE_LEXICON: dict[str, str] = {}
+for _en_text, _translations in LEXICON.items():
+    for _lang, _text in _translations.items():
+        _REVERSE_LEXICON[_text] = _en_text
+# Manual Hinglish -> English additions
+_REVERSE_LEXICON["aaj hum water cycle padhenge"] = "Today we will study the water cycle"
+_REVERSE_LEXICON["aaj hum paani cycle padhenge"] = "Today we will study the water cycle"
+
 
 def _norm_key(text: str) -> str:
     """Normalize for lexicon lookup: lowercase, strip trailing punctuation/whitespace."""
@@ -56,14 +68,15 @@ def _norm_key(text: str) -> str:
 # ---------------------------------------------------------------------------
 # L1 NVIDIA LLM translator
 # ---------------------------------------------------------------------------
-def _translate_nvidia(text: str, target: str) -> str:
+def _translate_nvidia(text: str, target: str, system_prompt: Optional[str] = None) -> str:
     """POST to NVIDIA API integrate.chat.completions. Hard 8s timeout."""
     api_key = os.environ.get("NVIDIA_API_KEY")
     if not api_key:
         raise RuntimeError("NVIDIA_API_KEY not set in environment")
 
-    target_name = {"mr": "Marathi", "hi": "Hindi"}.get(target, target)
-    system_prompt = f"Translate the user text into {target_name}. Output ONLY the translated text."
+    if system_prompt is None:
+        target_name = {"mr": "Marathi", "hi": "Hindi"}.get(target, target)
+        system_prompt = f"Translate the user text into {target_name}. Output ONLY the translated text."
 
     payload = {
         "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
@@ -190,43 +203,72 @@ def _try_mymemory(text: str, target: str) -> str:
 # ---------------------------------------------------------------------------
 def translate_safe(text: str, target: str) -> str:
     """Translate text via 4-layer chain. Never crashes the server.
-    Caches every successful translation from any layer."""
+    Caches every successful translation from any layer.
+    For target='en': reverse lexicon -> NVIDIA Hinglish->English -> original."""
     cache_key = (target, text)
     if cache_key in _translate_cache:
         return _translate_cache[cache_key]
 
     result = text
 
-    # L0: Offline lexicon (exact match, case-insensitive)
-    try:
-        lex_entry = LEXICON.get(_norm_key(text), {})
-        if target in lex_entry:
-            result = lex_entry[target]
-    except Exception:
-        pass
-
-    # L1: NVIDIA LLM
-    if result == text:
+    if target == 'en':
+        # Code-switching to English: L0 reverse lexicon first
         try:
-            result = _translate_nvidia(text, target)
+            norm = _norm_key(text)
+            if norm in _REVERSE_LEXICON:
+                result = _REVERSE_LEXICON[norm]
         except Exception:
             pass
 
-    # L2: GoogleTranslator
-    if result == text:
+        # L1: NVIDIA LLM — Hinglish / Marathi / Hindi -> pure academic English
+        if result == text:
+            try:
+                result = _translate_nvidia(
+                    text,
+                    'en',
+                    system_prompt=(
+                        "You are a translator for an Indian classroom. "
+                        "The teacher is speaking a mix of English, Marathi, and Hindi (Hinglish). "
+                        "Translate this text into pure, academic English. "
+                        "Output ONLY the English text."
+                    ),
+                )
+            except Exception:
+                pass
+
+        # L4: original text (already in `result`)
+    else:
+        # Existing 4-layer chain for Marathi / Hindi targets
+        # L0: Offline lexicon (exact match, case-insensitive)
         try:
-            result = GoogleTranslator(source='auto', target=target).translate(text)
+            lex_entry = LEXICON.get(_norm_key(text), {})
+            if target in lex_entry:
+                result = lex_entry[target]
         except Exception:
             pass
 
-    # L3: MyMemoryTranslator
-    if result == text:
-        try:
-            result = _try_mymemory(text, target)
-        except Exception:
-            pass
+        # L1: NVIDIA LLM
+        if result == text:
+            try:
+                result = _translate_nvidia(text, target)
+            except Exception:
+                pass
 
-    # L4: original text (already in `result`)
+        # L2: GoogleTranslator
+        if result == text:
+            try:
+                result = GoogleTranslator(source='auto', target=target).translate(text)
+            except Exception:
+                pass
+
+        # L3: MyMemoryTranslator
+        if result == text:
+            try:
+                result = _try_mymemory(text, target)
+            except Exception:
+                pass
+
+        # L4: original text (already in `result`)
 
     if result != text:
         _translate_cache[cache_key] = result
