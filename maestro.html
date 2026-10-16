@@ -3,38 +3,65 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Maestro — Broadcast</title>
+<title>Maestro — Teacher Broadcast</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b0c10; color: #c5c6c7; height: 100vh; display: flex; flex-direction: column; }
-  header { background: #1f2833; padding: 1rem 2rem; border-bottom: 1px solid #45a29e; }
-  header h1 { color: #66fcf1; font-size: 1.25rem; letter-spacing: 0.1em; }
-  main { flex: 1; padding: 2rem; display: flex; flex-direction: column; gap: 1rem; overflow: hidden; }
-  .status { font-size: 0.875rem; color: #45a29e; margin-bottom: 0.5rem; }
-  textarea { flex: 1; background: #1f2833; border: 1px solid #45a29e; border-radius: 8px; padding: 1rem; color: #c5c6c7; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1rem; resize: none; outline: none; }
-  textarea:focus { border-color: #66fcf1; }
-  .btn-group { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
-  button { background: #45a29e; color: #0b0c10; border: none; border-radius: 8px; padding: 1rem 2rem; font-size: 1rem; font-weight: 600; cursor: pointer; width: fit-content; align-self: flex-start; }
-  button:hover { background: #66fcf1; }
+  :root {
+    --bg: #020617;
+    --panel: #0f172a;
+    --border: #334155;
+    --accent: #22d3ee;
+    --accent-hover: #67e8f9;
+    --text: #f8fafc;
+    --muted: #94a3b8;
+    --danger: #ef4444;
+    --success: #22c55e;
+    --purple: #a855f7;
+  }
+  body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; display: flex; align-items: center; gap: 1rem; flex-shrink: 0; }
+  header h1 { color: var(--accent); font-size: 1.1rem; letter-spacing: 0.12em; font-weight: 700; text-transform: uppercase; }
+  header .dot { width: 8px; height: 8px; background: var(--success); border-radius: 50%; animation: ping 2s infinite; }
+  @keyframes ping { 0% { transform: scale(1); opacity: 1; } 75% { transform: scale(2); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+  main { flex: 1; padding: 2rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1.25rem; }
+  .status { font-size: 0.85rem; color: var(--muted); padding: 0.6rem 1rem; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; width: fit-content; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; }
+  .textarea-wrap { background: #020617; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; flex: 1; display: flex; flex-direction: column; gap: 0.75rem; }
+  textarea { flex: 1; background: transparent; border: none; border-radius: 6px; padding: 0; color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1rem; resize: vertical; outline: none; line-height: 1.6; min-height: 200px; }
+  textarea::placeholder { color: var(--muted); }
+  .btn-group { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
+  button { border: none; border-radius: 8px; padding: 0.75rem 1.5rem; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
-  button.dictate { background: #7c3aed; color: #ffffff; }
-  button.dictate:hover { background: #a855f7; }
-  button.dictate.listening { background: #ef4444; animation: pulse 1.5s infinite; }
-  button.dictate:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: #020617; }
+  .btn-primary:hover:not(:disabled) { background: var(--accent-hover); transform: translateY(-1px); }
+  .btn-dictate { background: var(--purple); color: #fff; }
+  .btn-dictate:hover:not(:disabled) { background: #c026d3; transform: translateY(-1px); }
+  .btn-dictate.listening { background: var(--danger); animation: pulse 1.5s infinite; }
   @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
-  .hint { font-size: 0.75rem; color: #666; margin-top: 0.25rem; }
+  .hint { font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; }
+  .badge { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); font-weight: 700; margin-bottom: 0.5rem; }
 </style>
 </head>
 <body>
-<header><h1>MAESTRO</h1></header>
+<header>
+  <div class="dot"></div>
+  <h1>MAESTRO</h1>
+</header>
 <main>
-  <div class="status" id="status">Connecting&hellip;</div>
-  <textarea id="note" placeholder="Type your lesson notes here&hellip;"></textarea>
-  <div class="btn-group">
-    <button id="broadcast" disabled>Broadcast</button>
-    <button id="dictate" class="dictate" disabled>Dictate</button>
+  <div id="status" class="status">Connecting&hellip;</div>
+
+  <div class="card">
+    <div class="badge">Lesson Notes</div>
+    <div class="textarea-wrap">
+      <textarea id="note" rows="6" placeholder="Type your lesson notes here&hellip;"></textarea>
+    </div>
   </div>
-  <div class="hint">Broadcasts text notes instantly. Dictate captures speech and turns it into a Mermaid diagram for all apprentices.</div>
+
+  <div class="btn-group">
+    <button id="broadcast" class="btn-primary" disabled>Broadcast</button>
+    <button id="dictate" class="btn-dictate" disabled>Dictate</button>
+  </div>
+  <div class="hint">Broadcast sends text to all apprentices. Dictate captures speech and generates a diagram.</div>
 </main>
 <script>
 const ws = new WebSocket(`ws://${location.host}/ws`);
@@ -44,13 +71,11 @@ const btn = document.getElementById('broadcast');
 const dictateBtn = document.getElementById('dictate');
 
 let recognition = null;
-let dictationSupported = false;
 
 ws.onopen = () => {
   status.textContent = 'Connected — ready to broadcast.';
-  status.style.color = '#45a29e';
+  status.style.color = 'var(--success)';
   btn.disabled = false;
-  // Check speech recognition support
   const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
   if (SpeechRecognition) {
     recognition = new SpeechRecognition();
@@ -64,12 +89,11 @@ ws.onopen = () => {
       if (text.trim()) {
         textarea.value = text;
         ws.send(JSON.stringify({ type: 'voice', text }));
-        dictateBtn.textContent = 'Dictated ✓';
+        dictateBtn.textContent = 'Dictated…';
         setTimeout(() => { dictateBtn.textContent = 'Dictate'; }, 1000);
       }
     };
-    recognition.onerror = (event) => {
-      console.error('Speech recognition error', event.error);
+    recognition.onerror = () => {
       dictateBtn.classList.remove('listening');
       dictateBtn.textContent = 'Dictate';
       fallbackDictation();
@@ -78,7 +102,6 @@ ws.onopen = () => {
       dictateBtn.classList.remove('listening');
       dictateBtn.textContent = 'Dictate';
     };
-    dictationSupported = true;
     dictateBtn.disabled = false;
   } else {
     dictateBtn.disabled = false;
@@ -86,13 +109,13 @@ ws.onopen = () => {
 };
 ws.onclose = () => {
   status.textContent = 'Disconnected.';
-  status.style.color = '#ff6b6b';
+  status.style.color = 'var(--danger)';
   btn.disabled = true;
   dictateBtn.disabled = true;
 };
 ws.onerror = () => {
   status.textContent = 'Connection error.';
-  status.style.color = '#ff6b6b';
+  status.style.color = 'var(--danger)';
   btn.disabled = true;
   dictateBtn.disabled = true;
 };
@@ -101,15 +124,12 @@ btn.onclick = () => {
   const text = textarea.value.trim();
   if (!text) return;
   ws.send(text);
-  btn.textContent = 'Broadcasting&hellip;';
+  btn.textContent = 'Broadcasting…';
   setTimeout(() => { btn.textContent = 'Broadcast'; }, 800);
 };
 
 dictateBtn.onclick = () => {
-  if (!recognition) {
-    fallbackDictation();
-    return;
-  }
+  if (!recognition) { fallbackDictation(); return; }
   if (dictateBtn.classList.contains('listening')) {
     recognition.stop();
     return;
@@ -117,9 +137,8 @@ dictateBtn.onclick = () => {
   try {
     recognition.start();
     dictateBtn.classList.add('listening');
-    dictateBtn.textContent = 'Listening&hellip;';
+    dictateBtn.textContent = 'Listening…';
   } catch (e) {
-    console.error('Recognition start failed', e);
     fallbackDictation();
   }
 };
@@ -129,7 +148,7 @@ function fallbackDictation() {
   if (text && text.trim()) {
     textarea.value = text;
     ws.send(JSON.stringify({ type: 'voice', text: text.trim() }));
-    dictateBtn.textContent = 'Typed ✓';
+    dictateBtn.textContent = 'Typed…';
     setTimeout(() => { dictateBtn.textContent = 'Dictate'; }, 1000);
   }
 }

@@ -6,56 +6,73 @@
 <title>Apprentice — Live Feed</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b0c10; color: #c5c6c7; height: 100vh; display: flex; flex-direction: column; }
-  header { background: #1f2833; padding: 1rem 2rem; border-bottom: 1px solid #45a29e; }
-  header h1 { color: #66fcf1; font-size: 1.25rem; letter-spacing: 0.1em; }
-  main { flex: 1; padding: 2rem; display: flex; flex-direction: column; gap: 1rem; overflow: hidden; }
-  .status { font-size: 0.875rem; color: #45a29e; margin-bottom: 0.5rem; }
+  :root {
+    --bg: #020617;
+    --panel: #0f172a;
+    --border: #334155;
+    --accent: #22d3ee;
+    --accent-hover: #67e8f9;
+    --text: #f8fafc;
+    --muted: #94a3b8;
+    --danger: #ef4444;
+    --success: #22c55e;
+    --purple: #a855f7;
+  }
+  body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; display: flex; align-items: center; gap: 1rem; flex-shrink: 0; }
+  header h1 { color: var(--accent); font-size: 1.1rem; letter-spacing: 0.12em; font-weight: 700; text-transform: uppercase; }
+  header .dot { width: 8px; height: 8px; background: var(--success); border-radius: 50%; animation: ping 2s infinite; }
+  @keyframes ping { 0% { transform: scale(1); opacity: 1; } 75% { transform: scale(2); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+  main { flex: 1; padding: 2rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1rem; }
+  .status { font-size: 0.85rem; color: var(--muted); padding: 0.6rem 1rem; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; width: fit-content; }
   .lang-bar { display: flex; gap: 0.5rem; }
-  .lang-btn { background: #1f2833; border: 1px solid #45a29e; color: #c5c6c7; border-radius: 6px; padding: 0.5rem 1rem; font-size: 0.9rem; cursor: pointer; }
-  .lang-btn:hover { border-color: #66fcf1; color: #66fcf1; }
-  .lang-btn.active { background: #45a29e; color: #0b0c10; border-color: #45a29e; font-weight: 600; }
-  #feed { flex: 1; background: #1f2833; border: 1px solid #45a29e; border-radius: 8px; padding: 1rem; overflow-y: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.95rem; line-height: 1.5; }
-  .msg { border-bottom: 1px solid #212830; padding: 0.75rem 0; animation: fadeIn 0.3s ease; }
+  .lang-btn { background: var(--panel); border: 1px solid var(--border); color: var(--muted); border-radius: 8px; padding: 0.5rem 1rem; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; }
+  .lang-btn:hover { border-color: var(--accent); color: var(--text); }
+  .lang-btn.active { background: var(--accent); color: #020617; border-color: var(--accent); font-weight: 600; }
+  #feed { flex: 1; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; overflow-y: auto; font-size: 0.95rem; line-height: 1.6; }
+  .msg { border-bottom: 1px solid #1e293b; padding: 0.75rem 0; animation: fadeIn 0.3s ease; }
   .msg:last-child { border-bottom: none; }
-  .msg .time { font-size: 0.7rem; color: #666; margin-right: 0.5rem; }
-  .msg .lang-tag { font-size: 0.65rem; color: #45a29e; margin-left: 0.5rem; text-transform: uppercase; }
-  .msg.empty { color: #666; font-style: italic; text-align: center; margin-top: 2rem; }
+  .msg .time { font-size: 0.7rem; color: var(--muted); margin-right: 0.5rem; font-weight: 600; }
+  .msg .lang-tag { font-size: 0.65rem; color: var(--accent); margin-left: 0.5rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; }
+  .msg.empty { color: var(--muted); font-style: italic; text-align: center; margin-top: 3rem; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-  .panel { background: #1f2833; border: 1px solid #45a29e; border-radius: 8px; padding: 1rem; }
-  .panel h3 { color: #66fcf1; font-size: 0.9rem; margin-bottom: 0.5rem; letter-spacing: 0.05em; }
-  textarea#marginalia { width: 100%; height: 120px; background: #0b0c10; border: 1px solid #45a29e; border-radius: 6px; padding: 0.75rem; color: #c5c6c7; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9rem; resize: vertical; outline: none; }
-  textarea#marginalia:focus { border-color: #66fcf1; }
-  .hint { font-size: 0.75rem; color: #666; margin-top: 0.25rem; }
-  .diagram { width: 100%; max-height: 40vh; overflow: auto; border: 1px solid #45a29e; border-radius: 8px; padding: 0.5rem; background: #0b0c10; margin-top: 0.75rem; }
-  .diagram .mermaid { margin: 0; }
-  .diagram-title { font-size: 0.8rem; color: #66fcf1; margin-bottom: 0.4rem; font-weight: 600; letter-spacing: 0.05em; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
+  .panel h3 { color: var(--accent); font-size: 0.9rem; margin-bottom: 0.5rem; font-weight: 700; letter-spacing: 0.05em; }
+  textarea#marginalia { width: 100%; height: 120px; background: #020617; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9rem; resize: vertical; outline: none; }
+  textarea#marginalia:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.15); }
+  .hint { font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; }
 
-  /* ---------- Avatar Professor ---------- */
+  .diagram { width: 100%; max-height: 45vh; overflow: auto; border: 1px solid var(--border); border-radius: 10px; padding: 0.75rem; background: #020617; margin-top: 0.75rem; }
+  .diagram .mermaid { margin: 0; }
+  .diagram-title { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.4rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+
   .avatar-row { display: flex; gap: 1rem; align-items: flex-start; margin-top: 0.75rem; }
   .avatar-card { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
   .avatar-controls { display: flex; gap: 0.5rem; flex-wrap: wrap; }
   #upload-face { display: none; }
-  .avatar-frame { border: 2px solid #45a29e; border-radius: 12px; background: #0b0c10; padding: 0.5rem; }
-  #avatar-canvas { border-radius: 8px; width: 180px; height: 220px; object-fit: cover; background: #0b0c10; }
-  .avatar-empty { width: 180px; height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 2px dashed #45a29e; border-radius: 12px; color: #666; font-size: 0.8rem; }
-  .speech-bubble { background: #45a29e; color: #0b0c10; border-radius: 12px 12px 12px 4px; padding: 0.75rem 1rem; font-size: 0.9rem; line-height: 1.4; max-width: 280px; box-shadow: 0 4px 12px rgba(69,162,158,0.4); position: relative; display: none; }
-  .speech-bubble::after { content: ''; position: absolute; top: 14px; left: -10px; border-width: 10px 10px 10px 0; border-style: solid; border-color: transparent #45a29e transparent transparent; }
-  @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+  .avatar-frame { border: 2px solid var(--border); border-radius: 12px; background: #020617; padding: 0.5rem; }
+  #avatar-canvas { border-radius: 8px; width: 170px; height: 200px; object-fit: cover; background: #020617; display: block; }
+  .avatar-empty { width: 170px; height: 200px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 2px dashed var(--border); border-radius: 12px; color: var(--muted); font-size: 0.75rem; }
+  .speech-bubble { background: var(--purple); color: #fff; border-radius: 14px 14px 14px 4px; padding: 0.85rem 1.1rem; font-size: 0.9rem; line-height: 1.5; max-width: 300px; box-shadow: 0 4px 16px rgba(168, 85, 247, 0.4); position: relative; display: none; }
+  .speech-bubble::after { content: ''; position: absolute; top: 16px; left: -10px; border-width: 10px 10px 10px 0; border-style: solid; border-color: transparent var(--purple) transparent transparent; }
+  @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
   .speaking { animation: bounce 1.2s ease-in-out infinite; }
-  .btn-upload, .btn-revision { background: #7c3aed; color: #ffffff; border: none; border-radius: 6px; padding: 0.5rem 1rem; font-size: 0.85rem; cursor: pointer; }
-  .btn-upload:hover, .btn-revision:hover { background: #a855f7; }
+  .btn-upload, .btn-revision { background: var(--purple); color: #fff; border: none; border-radius: 8px; padding: 0.6rem 1.25rem; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+  .btn-upload:hover, .btn-revision:hover { background: #c026d3; transform: translateY(-1px); }
   .btn-upload:disabled, .btn-revision:disabled { opacity: 0.5; cursor: not-allowed; }
-  .btn-revision.speaking { background: #ef4444; animation: pulse 1.5s infinite; }
-  @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
-  .avatar-hint { font-size: 0.7rem; color: #666; text-align: center; max-width: 200px; }
+  .btn-revision.speaking { background: var(--danger); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+  .avatar-hint { font-size: 0.7rem; color: var(--muted); text-align: center; max-width: 200px; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
 <body>
-<header><h1>APPRENTICE</h1></header>
+<header>
+  <div class="dot"></div>
+  <h1>APPRENTICE</h1>
+</header>
 <main>
-  <div class="status" id="status">Connecting&hellip;</div>
+  <div id="status" class="status">Connecting&hellip;</div>
   <div class="lang-bar">
     <button class="lang-btn active" data-lang="en">English</button>
     <button class="lang-btn" data-lang="mr">मराठी</button>
@@ -68,7 +85,6 @@
     <div class="hint">This textarea is local only — nothing you type here leaves your browser.</div>
   </div>
 
-  <!-- Avatar Professor Section -->
   <div class="avatar-row">
     <div class="avatar-card">
       <div class="avatar-controls">
@@ -77,7 +93,7 @@
         <button class="btn-revision" id="btn-revision">Revision Mode</button>
       </div>
       <div class="avatar-frame">
-        <canvas id="avatar-canvas" width="180" height="220"></canvas>
+        <canvas id="avatar-canvas" width="170" height="200"></canvas>
         <div id="avatar-empty" class="avatar-empty">No face<br>uploaded</div>
       </div>
       <div class="avatar-hint">Upload a photo, then tap Revision Mode.</div>
@@ -94,9 +110,7 @@ const ws = new WebSocket(`ws://${location.host}/ws`);
 const status = document.getElementById('status');
 const feed = document.getElementById('feed');
 let messages = [];
-let currentLang = 'en';
 
-// Avatar elements
 const uploadFace = document.getElementById('upload-face');
 const canvas = document.getElementById('avatar-canvas');
 const ctx = canvas.getContext('2d');
@@ -106,9 +120,7 @@ const speechBubble = document.getElementById('speech-bubble');
 const speechText = document.getElementById('speech-text');
 
 let avatarImage = null;
-let isSpeaking = false;
 
-// Load saved avatar from localStorage
 const saved = localStorage.getItem('avatar_face');
 if (saved) {
   avatarImage = new Image();
@@ -123,7 +135,6 @@ if (saved) {
   avatarImage.src = saved;
 }
 
-// Upload face handler
 uploadFace.addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -146,15 +157,15 @@ uploadFace.addEventListener('change', (e) => {
 
 ws.onopen = () => {
   status.textContent = 'Connected — listening to maestro.';
-  status.style.color = '#45a29e';
+  status.style.color = 'var(--success)';
 };
 ws.onclose = () => {
   status.textContent = 'Disconnected.';
-  status.style.color = '#ff6b6b';
+  status.style.color = 'var(--danger)';
 };
 ws.onerror = () => {
   status.textContent = 'Connection error.';
-  status.style.color = '#ff6b6b';
+  status.style.color = 'var(--danger)';
 };
 ws.onmessage = (event) => {
   try {
@@ -196,7 +207,7 @@ function renderMermaid(msg) {
   if (empty) empty.remove();
   const container = document.createElement('div');
   container.className = 'msg';
-  container.style.borderBottom = '1px solid #212830';
+  container.style.borderBottom = '1px solid #1e293b';
   container.style.padding = '0.75rem 0';
   const now = new Date(msg.ts * 1000);
   const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -209,13 +220,7 @@ function renderMermaid(msg) {
   container.appendChild(title);
   container.appendChild(diagramDiv);
   feed.prepend(container);
-
-  // Render mermaid diagram
-  try {
-    mermaid.init(undefined, diagramDiv.querySelector('.mermaid'));
-  } catch (e) {
-    console.error('Mermaid render error', e);
-  }
+  try { mermaid.init(undefined, diagramDiv.querySelector('.mermaid')); } catch (e) { console.error('Mermaid render error', e); }
   feed.scrollTop = feed.scrollHeight;
 }
 
@@ -223,7 +228,7 @@ function showRevision(text) {
   speechText.textContent = text;
   speechBubble.style.display = 'block';
   btnRevision.classList.add('speaking');
-  btnRevision.textContent = 'Speaking&hellip;';
+  btnRevision.textContent = 'Speaking…';
   setTimeout(() => {
     btnRevision.classList.remove('speaking');
     btnRevision.textContent = 'Revision Mode';
@@ -241,7 +246,6 @@ document.querySelectorAll('.lang-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    currentLang = btn.dataset.lang;
     renderFeed();
   });
 });
