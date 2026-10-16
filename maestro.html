@@ -13,9 +13,15 @@
   .status { font-size: 0.875rem; color: #45a29e; margin-bottom: 0.5rem; }
   textarea { flex: 1; background: #1f2833; border: 1px solid #45a29e; border-radius: 8px; padding: 1rem; color: #c5c6c7; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1rem; resize: none; outline: none; }
   textarea:focus { border-color: #66fcf1; }
+  .btn-group { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
   button { background: #45a29e; color: #0b0c10; border: none; border-radius: 8px; padding: 1rem 2rem; font-size: 1rem; font-weight: 600; cursor: pointer; width: fit-content; align-self: flex-start; }
   button:hover { background: #66fcf1; }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.dictate { background: #7c3aed; color: #ffffff; }
+  button.dictate:hover { background: #a855f7; }
+  button.dictate.listening { background: #ef4444; animation: pulse 1.5s infinite; }
+  button.dictate:disabled { opacity: 0.5; cursor: not-allowed; }
+  @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
   .hint { font-size: 0.75rem; color: #666; margin-top: 0.25rem; }
 </style>
 </head>
@@ -24,29 +30,71 @@
 <main>
   <div class="status" id="status">Connecting&hellip;</div>
   <textarea id="note" placeholder="Type your lesson notes here&hellip;"></textarea>
-  <button id="broadcast" disabled>Broadcast</button>
-  <div class="hint">Broadcasts to all connected apprentices instantly.</div>
+  <div class="btn-group">
+    <button id="broadcast" disabled>Broadcast</button>
+    <button id="dictate" class="dictate" disabled>Dictate</button>
+  </div>
+  <div class="hint">Broadcasts text notes instantly. Dictate captures speech and turns it into a Mermaid diagram for all apprentices.</div>
 </main>
 <script>
 const ws = new WebSocket(`ws://${location.host}/ws`);
 const status = document.getElementById('status');
 const textarea = document.getElementById('note');
 const btn = document.getElementById('broadcast');
+const dictateBtn = document.getElementById('dictate');
+
+let recognition = null;
+let dictationSupported = false;
 
 ws.onopen = () => {
   status.textContent = 'Connected — ready to broadcast.';
   status.style.color = '#45a29e';
   btn.disabled = false;
+  // Check speech recognition support
+  const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
+  if (SpeechRecognition) {
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+    recognition.onresult = (event) => {
+      const text = event.results[0][0].transcript;
+      dictateBtn.classList.remove('listening');
+      dictateBtn.textContent = 'Dictate';
+      if (text.trim()) {
+        textarea.value = text;
+        ws.send(JSON.stringify({ type: 'voice', text }));
+        dictateBtn.textContent = 'Dictated ✓';
+        setTimeout(() => { dictateBtn.textContent = 'Dictate'; }, 1000);
+      }
+    };
+    recognition.onerror = (event) => {
+      console.error('Speech recognition error', event.error);
+      dictateBtn.classList.remove('listening');
+      dictateBtn.textContent = 'Dictate';
+      fallbackDictation();
+    };
+    recognition.onend = () => {
+      dictateBtn.classList.remove('listening');
+      dictateBtn.textContent = 'Dictate';
+    };
+    dictationSupported = true;
+    dictateBtn.disabled = false;
+  } else {
+    dictateBtn.disabled = false;
+  }
 };
 ws.onclose = () => {
   status.textContent = 'Disconnected.';
   status.style.color = '#ff6b6b';
   btn.disabled = true;
+  dictateBtn.disabled = true;
 };
 ws.onerror = () => {
   status.textContent = 'Connection error.';
   status.style.color = '#ff6b6b';
   btn.disabled = true;
+  dictateBtn.disabled = true;
 };
 
 btn.onclick = () => {
@@ -56,6 +104,35 @@ btn.onclick = () => {
   btn.textContent = 'Broadcasting&hellip;';
   setTimeout(() => { btn.textContent = 'Broadcast'; }, 800);
 };
+
+dictateBtn.onclick = () => {
+  if (!recognition) {
+    fallbackDictation();
+    return;
+  }
+  if (dictateBtn.classList.contains('listening')) {
+    recognition.stop();
+    return;
+  }
+  try {
+    recognition.start();
+    dictateBtn.classList.add('listening');
+    dictateBtn.textContent = 'Listening&hellip;';
+  } catch (e) {
+    console.error('Recognition start failed', e);
+    fallbackDictation();
+  }
+};
+
+function fallbackDictation() {
+  const text = prompt('Dictation mode — type what you would say:');
+  if (text && text.trim()) {
+    textarea.value = text;
+    ws.send(JSON.stringify({ type: 'voice', text: text.trim() }));
+    dictateBtn.textContent = 'Typed ✓';
+    setTimeout(() => { dictateBtn.textContent = 'Dictate'; }, 1000);
+  }
+}
 </script>
 </body>
 </html>

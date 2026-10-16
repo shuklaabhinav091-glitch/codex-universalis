@@ -27,7 +27,11 @@
   textarea#marginalia { width: 100%; height: 120px; background: #0b0c10; border: 1px solid #45a29e; border-radius: 6px; padding: 0.75rem; color: #c5c6c7; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9rem; resize: vertical; outline: none; }
   textarea#marginalia:focus { border-color: #66fcf1; }
   .hint { font-size: 0.75rem; color: #666; margin-top: 0.25rem; }
+  .diagram { width: 100%; max-height: 40vh; overflow: auto; border: 1px solid #45a29e; border-radius: 8px; padding: 0.5rem; background: #0b0c10; margin-top: 0.75rem; }
+  .diagram .mermaid { margin: 0; }
+  .diagram-title { font-size: 0.8rem; color: #66fcf1; margin-bottom: 0.4rem; font-weight: 600; letter-spacing: 0.05em; }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
 <body>
 <header><h1>APPRENTICE</h1></header>
@@ -46,10 +50,12 @@
   </div>
 </main>
 <script>
+mermaid.initialize({ startOnLoad: false, theme: 'neutral', look: 'handDrawn' });
+
 const ws = new WebSocket(`ws://${location.host}/ws`);
 const status = document.getElementById('status');
 const feed = document.getElementById('feed');
-let messages = []; // stored messages: {en, mr, hi, ts}
+let messages = []; // stored messages: {en, mr, hi, ts} or {type:'mermaid', code, ts}
 let currentLang = 'en';
 
 ws.onopen = () => {
@@ -66,8 +72,13 @@ ws.onerror = () => {
 };
 ws.onmessage = (event) => {
   const msg = JSON.parse(event.data);
-  messages.push(msg);
-  renderFeed();
+  if (msg.type === 'mermaid') {
+    messages.push(msg);
+    renderMermaid(msg);
+  } else {
+    messages.push(msg);
+    renderFeed();
+  }
 };
 
 function renderFeed() {
@@ -75,6 +86,7 @@ function renderFeed() {
   if (empty) empty.remove();
   feed.innerHTML = '';
   [...messages].reverse().forEach(m => {
+    if (m.type === 'mermaid') return; // diagrams rendered separately
     const div = document.createElement('div');
     div.className = 'msg';
     const now = new Date(m.ts * 1000);
@@ -83,6 +95,34 @@ function renderFeed() {
     div.innerHTML = `<span class="time">[${time}]</span><span class="lang-tag">[${currentLang}]</span>${text.replace(/\n/g, '<br>')}`;
     feed.appendChild(div);
   });
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function renderMermaid(msg) {
+  const empty = feed.querySelector('.empty');
+  if (empty) empty.remove();
+
+  const container = document.createElement('div');
+  container.className = 'msg';
+  container.style.borderBottom = '1px solid #212830';
+  container.style.padding = '0.75rem 0';
+
+  const now = new Date(msg.ts * 1000);
+  const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  const title = document.createElement('div');
+  title.className = 'diagram-title';
+  title.textContent = `[${time}] Voice Diagram`;
+
+  const diagramDiv = document.createElement('div');
+  diagramDiv.className = 'diagram';
+  diagramDiv.innerHTML = `<div class="mermaid">${msg.code}</div>`;
+
+  container.appendChild(title);
+  container.appendChild(diagramDiv);
+  feed.prepend(container);
+
+  mermaid.init(undefined, diagramDiv.querySelector('.mermaid'));
   feed.scrollTop = feed.scrollHeight;
 }
 

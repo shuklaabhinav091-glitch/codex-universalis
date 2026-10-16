@@ -17,6 +17,11 @@ BASE_DIR = Path(__file__).parent
 _translate_cache: dict[tuple[str, str], str] = {}
 
 # ---------------------------------------------------------------------------
+# In-memory mermaid cache: keyed by spoken text
+# ---------------------------------------------------------------------------
+_mermaid_cache: dict[str, str] = {}
+
+# ---------------------------------------------------------------------------
 # L0 OFFLINE LEXICON — exact match, case-insensitive, punctuation-tolerant
 # ---------------------------------------------------------------------------
 LEXICON: dict[str, dict[str, str]] = {
@@ -83,6 +88,82 @@ def _translate_nvidia(text: str, target: str) -> str:
     resp.raise_for_status()
     data = resp.json()
     return data["choices"][0]["message"]["content"].strip()
+
+
+# ---------------------------------------------------------------------------
+# Divine Dictation — NVIDIA LLM to Mermaid flowchart
+# ---------------------------------------------------------------------------
+def _diagram_nvidia(spoken_text: str) -> str:
+    """Convert spoken description into Mermaid.js flowchart via NVIDIA LLM. 10s timeout."""
+    api_key = os.environ.get("NVIDIA_API_KEY")
+    if not api_key:
+        raise RuntimeError("NVIDIA_API_KEY not set in environment")
+
+    system_prompt = "Convert this spoken description into valid Mermaid.js flowchart syntax. Output ONLY the mermaid code."
+
+    payload = {
+        "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": spoken_text},
+        ],
+        "temperature": 0.2,
+        "max_tokens": 500,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    resp = requests.post(
+        "https://integrate.api.nvidia.com/v1/chat/completions",
+        headers=headers,
+        json=payload,
+        timeout=10,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    code = data["choices"][0]["message"]["content"].strip()
+    # Strip markdown fences if present
+    code = re.sub(r'^```mermaid\s*', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^```\s*$', '', code, flags=re.MULTILINE)
+    code = code.strip()
+    if not code:
+        raise ValueError("Empty mermaid code from LLM")
+    return code
+
+
+def _fallback_mermaid(spoken_text: str) -> str:
+    """Build a 3-node flowchart from the first 3 spoken words. Never crashes."""
+    words = spoken_text.strip().split()
+    if len(words) == 0:
+        words = ["Silence"]
+    if len(words) == 1:
+        words = [words[0], "is", "heard"]
+    if len(words) == 2:
+        words = [words[0], words[1], "flow"]
+    a, b, c = words[0], words[1], words[2]
+    # Sanitize node labels (alphanumeric only)
+    safe = lambda w: re.sub(r'[^A-Za-z0-9]', '', w) or "Node"
+    return f"graph TD\n    {safe(a)} --> {safe(b)}\n    {safe(b)} --> {safe(c)}"
+
+
+def speak_to_mermaid(spoken_text: str) -> str:
+    """4-layer chain for voice->mermaid: cache → NVIDIA → fallback → never crash."""
+    if spoken_text in _mermaid_cache:
+        return _mermaid_cache[spoken_text]
+
+    code = None
+    try:
+        code = _diagram_nvidia(spoken_text)
+    except Exception:
+        code = None
+
+    if not code:
+        code = _fallback_mermaid(spoken_text)
+
+    _mermaid_cache[spoken_text] = code
+    return code
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +257,22 @@ async def ws_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
+            # Try to parse as JSON voice message
+            try:
+                msg = json.loads(data)
+                if isinstance(msg, dict) and msg.get("type") == "voice":
+                    spoken_text = msg.get("text", "")
+                    mermaid_code = speak_to_mermaid(spoken_text)
+                    await manager.broadcast(json.dumps({
+                        "type": "mermaid",
+                        "code": mermaid_code,
+                        "ts": time.time()
+                    }))
+                    continue
+            except (json.JSONDecodeError, AttributeError):
+                pass
+
+            # Plain text note — existing translation path
             original = data
             mr = translate_safe(original, 'mr')
             hi = translate_safe(original, 'hi')
