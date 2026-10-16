@@ -315,7 +315,9 @@ def translate_safe(text: str, target: str) -> str:
             except Exception:
                 pass
 
-        # L4: original text (already in `result`)
+        # L4: original text — but never show raw Devanagari on the English feed
+        if result == text and re.search(r'[\u0900-\u097F]', text):
+            result = f"[untranslated: {text}]"
     else:
         # Existing 4-layer chain for Marathi / Hindi targets
         # L0: Offline lexicon (exact match, case-insensitive)
