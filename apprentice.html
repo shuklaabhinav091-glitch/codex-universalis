@@ -216,6 +216,33 @@
   }
   .diagram-wrap .mermaid { margin: 0; }
 
+  /* Shared drawing board (read-only mirror) */
+  .draw-wrap {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1rem;
+    backdrop-filter: blur(8px);
+    animation: slideUp 0.4s ease;
+  }
+  .draw-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .draw-header .badge { margin: 0; }
+  #draw-canvas {
+    width: 100%;
+    height: 260px;
+    background: #020617;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: crosshair;
+    display: block;
+  }
+
   /* Avatar Professor */
   .avatar-row {
     display: flex;
@@ -347,6 +374,15 @@
     <div class="hint">Local only — never sent to the server.</div>
   </div>
 
+  <div class="draw-wrap">
+    <div class="draw-header">
+      <span class="badge">Live Whiteboard</span>
+      <div style="flex:1;"></div>
+      <span style="font-size:0.75rem;color:var(--muted);">Maestro is drawing</span>
+    </div>
+    <canvas id="draw-canvas"></canvas>
+  </div>
+
   <div class="avatar-row">
     <div class="avatar-card">
       <div class="avatar-controls">
@@ -391,6 +427,8 @@ ws.onmessage = (event) => {
     } else if (msg.type === 'revision') {
       messages.push(msg);
       showRevision(msg.text);
+    } else if (msg.type === 'draw') {
+      handleDraw(msg);
     } else {
       messages.push(msg);
       renderFeed();
@@ -403,7 +441,7 @@ function renderFeed() {
   if (empty) empty.remove();
   feed.innerHTML = '';
   [...messages].reverse().forEach(m => {
-    if (m.type === 'mermaid' || m.type === 'revision') return;
+    if (m.type === 'mermaid' || m.type === 'revision' || m.type === 'draw') return;
     const div = document.createElement('div');
     div.className = 'msg';
     const now = new Date(m.ts * 1000);
@@ -449,9 +487,50 @@ function showRevision(text) {
   }, 6000);
 }
 
+/* ---------- Shared whiteboard (mirrors maestro) ---------- */
+const drawCanvas = document.getElementById('draw-canvas');
+const dctx = drawCanvas.getContext('2d');
+
+function resizeDrawCanvas() {
+  drawCanvas.width = drawCanvas.parentElement.clientWidth;
+  drawCanvas.height = 260;
+  dctx.lineCap = 'round';
+  dctx.lineJoin = 'round';
+  dctx.fillStyle = '#020617';
+  dctx.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
+}
+window.addEventListener('resize', resizeDrawCanvas);
+resizeDrawCanvas();
+
+function handleDraw(msg) {
+  dctx.lineWidth = msg.size || 3;
+  dctx.strokeStyle = msg.color || '#22d3ee';
+  dctx.fillStyle = '#020617';
+
+  if (msg.action === 'clear') {
+    dctx.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
+    return;
+  }
+  if (msg.action === 'start') {
+    dctx.beginPath();
+    dctx.moveTo(msg.x, msg.y);
+    return;
+  }
+  if (msg.action === 'move') {
+    dctx.lineTo(msg.x, msg.y);
+    dctx.stroke();
+    return;
+  }
+  if (msg.action === 'end') {
+    // nothing
+    return;
+  }
+}
+
+/* ---------- Avatar Professor ---------- */
 const uploadFace = document.getElementById('upload-face');
-const canvas = document.getElementById('avatar-canvas');
-const ctx = canvas.getContext('2d');
+const avatarCanvas = document.getElementById('avatar-canvas');
+const actx = avatarCanvas.getContext('2d');
 const avatarEmpty = document.getElementById('avatar-empty');
 const btnRevision = document.getElementById('btn-revision');
 let avatarImage = null;
@@ -461,11 +540,11 @@ if (saved) {
   avatarImage = new Image();
   avatarImage.onload = () => {
     avatarEmpty.style.display = 'none';
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const scale = Math.min(canvas.width / avatarImage.width, canvas.height / avatarImage.height);
-    const x = (canvas.width - avatarImage.width * scale) / 2;
-    const y = (canvas.height - avatarImage.height * scale) / 2;
-    ctx.drawImage(avatarImage, x, y, avatarImage.width * scale, avatarImage.height * scale);
+    actx.clearRect(0, 0, avatarCanvas.width, avatarCanvas.height);
+    const scale = Math.min(avatarCanvas.width / avatarImage.width, avatarCanvas.height / avatarImage.height);
+    const x = (avatarCanvas.width - avatarImage.width * scale) / 2;
+    const y = (avatarCanvas.height - avatarImage.height * scale) / 2;
+    actx.drawImage(avatarImage, x, y, avatarImage.width * scale, avatarImage.height * scale);
   };
   avatarImage.src = saved;
 }
@@ -479,11 +558,11 @@ uploadFace.addEventListener('change', (e) => {
     avatarImage.onload = () => {
       localStorage.setItem('avatar_face', ev.target.result);
       avatarEmpty.style.display = 'none';
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const scale = Math.min(canvas.width / avatarImage.width, canvas.height / avatarImage.height);
-      const x = (canvas.width - avatarImage.width * scale) / 2;
-      const y = (canvas.height - avatarImage.height * scale) / 2;
-      ctx.drawImage(avatarImage, x, y, avatarImage.width * scale, avatarImage.height * scale);
+      actx.clearRect(0, 0, avatarCanvas.width, avatarCanvas.height);
+      const scale = Math.min(avatarCanvas.width / avatarImage.width, avatarCanvas.height / avatarImage.height);
+      const x = (avatarCanvas.width - avatarImage.width * scale) / 2;
+      const y = (avatarCanvas.height - avatarImage.height * scale) / 2;
+      actx.drawImage(avatarImage, x, y, avatarImage.width * scale, avatarImage.height * scale);
     };
     avatarImage.src = ev.target.result;
   };

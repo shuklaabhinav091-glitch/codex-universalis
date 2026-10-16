@@ -9,7 +9,6 @@
   :root {
     --bg: #020617;
     --panel: #0f172a;
-    --panel-hover: #1e293b;
     --border: #334155;
     --border-focus: #22d3ee;
     --accent: #22d3ee;
@@ -121,7 +120,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    min-height: 260px;
+    min-height: 220px;
   }
   textarea {
     background: transparent;
@@ -134,7 +133,7 @@
     resize: vertical;
     outline: none;
     line-height: 1.7;
-    min-height: 160px;
+    min-height: 140px;
     flex: 1;
   }
   textarea::placeholder { color: var(--muted); }
@@ -187,6 +186,58 @@
     margin-top: 0.35rem;
     line-height: 1.5;
   }
+
+  /* Drawing board */
+  .draw-wrap {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1rem;
+    backdrop-filter: blur(8px);
+    animation: slideUp 0.4s ease;
+  }
+  .draw-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .draw-header .badge { margin: 0; }
+  #draw-canvas {
+    width: 100%;
+    height: 260px;
+    background: #020617;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: crosshair;
+    display: block;
+  }
+  .draw-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    margin-top: 0.5rem;
+  }
+  .color-pill {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .color-pill:hover { transform: scale(1.15); }
+  .color-pill.active { box-shadow: 0 0 0 3px #fff; }
+  .size-label { font-size: 0.75rem; color: var(--muted); min-width: 28px; text-align: center; }
+  .clear-btn {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+  }
+  .clear-btn:hover { color: var(--text); border-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -209,6 +260,35 @@
     <button id="dictate" class="btn-dictate" disabled>Dictate</button>
   </div>
   <div class="hint">Broadcast sends notes to every apprentice instantly. Dictate turns speech into a live diagram.</div>
+
+  <div class="draw-wrap">
+    <div class="draw-header">
+      <span class="badge">Live Whiteboard</span>
+      <div style="flex:1;"></div>
+      <span style="font-size:0.75rem;color:var(--muted);">Color</span>
+      <div class="color-pills" role="group" aria-label="drawing color">
+        <div class="color-pill active" style="background:#22d3ee;" data-color="#22d3ee" title="Cyan"></div>
+        <div class="color-pill" style="background:#a855f7;" data-color="#a855f7" title="Purple"></div>
+        <div class="color-pill" style="background:#22c55e;" data-color="#22c55e" title="Green"></div>
+        <div class="color-pill" style="background:#ef4444;" data-color="#ef4444" title="Red"></div>
+        <div class="color-pill" style="background:#f59e0b;" data-color="#f59e0b" title="Amber"></div>
+        <div class="color-pill" style="background:#ffffff;" data-color="#ffffff" title="White"></div>
+      </div>
+      <span style="font-size:0.75rem;color:var(--muted);margin-left:0.5rem;">Size</span>
+      <span class="size-label" id="size-val">3</span>
+      <input type="range" id="size-slider" min="1" max="10" value="3" style="width:90px;accent-color:var(--accent);">
+      <button class="clear-btn" id="clear-draw">Clear</button>
+    </div>
+    <canvas id="draw-canvas"></canvas>
+    <div class="draw-controls">
+      <span class="color-pill active" style="background:#22d3ee;" data-color="#22d3ee"></span>
+      <span class="color-pill" style="background:#a855f7;" data-color="#a855f7"></span>
+      <span class="color-pill" style="background:#22c55e;" data-color="#22c55e"></span>
+      <span class="color-pill" style="background:#ef4444;" data-color="#ef4444"></span>
+      <span class="color-pill" style="background:#f59e0b;" data-color="#f59e0b"></span>
+      <span class="color-pill" style="background:#ffffff;" data-color="#ffffff"></span>
+    </div>
+  </div>
 </main>
 <script>
 const ws = new WebSocket(`ws://${location.host}/ws`);
@@ -308,6 +388,101 @@ function fallbackDictation() {
     setTimeout(() => { dictateBtn.textContent = 'Dictate'; }, 1000);
   }
 }
+
+/* ---------- Whiteboard ---------- */
+const canvas = document.getElementById('draw-canvas');
+const ctx = canvas.getContext('2d');
+const sizeSlider = document.getElementById('size-slider');
+const sizeVal = document.getElementById('size-val');
+const colorPills = document.querySelectorAll('.color-pill');
+const clearBtn = document.getElementById('clear-draw');
+
+let drawing = false;
+let currentColor = '#22d3ee';
+let currentSize = 3;
+
+function resizeCanvas() {
+  canvas.width = canvas.parentElement.clientWidth;
+  canvas.height = 260;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = currentSize;
+  ctx.strokeStyle = currentColor;
+  ctx.fillStyle = '#020617';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX || (e.touches && e.touches[0].clientX)) - rect.left,
+    y: (e.clientY || (e.touches && e.touches[0].clientY)) - rect.top
+  };
+}
+
+function startDraw(pos) {
+  drawing = true;
+  ctx.beginPath();
+  ctx.moveTo(pos.x, pos.y);
+  ws.send(JSON.stringify({
+    type: 'draw',
+    action: 'start',
+    x: pos.x,
+    y: pos.y,
+    color: currentColor,
+    size: currentSize
+  }));
+}
+
+function moveDraw(pos) {
+  if (!drawing) return;
+  ctx.lineTo(pos.x, pos.y);
+  ctx.stroke();
+  ws.send(JSON.stringify({
+    type: 'draw',
+    action: 'move',
+    x: pos.x,
+    y: pos.y,
+    color: currentColor,
+    size: currentSize
+  }));
+}
+
+function endDraw() {
+  if (!drawing) return;
+  drawing = false;
+  ws.send(JSON.stringify({ type: 'draw', action: 'end' }));
+}
+
+canvas.addEventListener('mousedown', e => startDraw(getPos(e)));
+canvas.addEventListener('mousemove', e => moveDraw(getPos(e)));
+canvas.addEventListener('mouseup', endDraw);
+canvas.addEventListener('mouseleave', endDraw);
+canvas.addEventListener('touchstart', e => { e.preventDefault(); startDraw(getPos(e)); }, {passive:false});
+canvas.addEventListener('touchmove', e => { e.preventDefault(); moveDraw(getPos(e)); }, {passive:false});
+canvas.addEventListener('touchend', endDraw);
+
+colorPills.forEach(pill => {
+  pill.addEventListener('click', () => {
+    colorPills.forEach(p => p.classList.remove('active'));
+    pill.classList.add('active');
+    currentColor = pill.dataset.color;
+  });
+});
+
+sizeSlider.addEventListener('input', e => {
+  currentSize = parseInt(e.target.value, 10);
+  sizeVal.textContent = currentSize;
+  ctx.lineWidth = currentSize;
+});
+
+clearBtn.addEventListener('click', () => {
+  ctx.fillStyle = '#020617';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ws.send(JSON.stringify({ type: 'draw', action: 'clear' }));
+});
 </script>
 </body>
 </html>

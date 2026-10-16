@@ -68,6 +68,53 @@ for _en_text, _translations in LEXICON.items():
 # Manual Hinglish -> English additions
 _REVERSE_LEXICON["aaj hum water cycle padhenge"] = "Today we will study the water cycle"
 _REVERSE_LEXICON["aaj hum paani cycle padhenge"] = "Today we will study the water cycle"
+# Manual Hinglish -> English additions (common classroom phrases)
+_REVERSE_LEXICON.update({
+    "good morning students": "Good morning students",
+    "namaste students": "Hello students",
+    "kripya dhyan dein": "Please pay attention",
+    "kripya dhyan dijiye": "Please pay attention",
+    "ek minute": "One minute",
+    "ek minute ruko": "Wait one minute",
+    "samajh gaya": "Understood",
+    "samajh gayi": "Understood",
+    "kya samajh aaya": "Did you understand",
+    "kya sab samajh gaya": "Did everyone understand",
+    "kya sab samajh gayi": "Did everyone understand",
+    "ab agle topic par chalte hain": "Now let's move to the next topic",
+    "yeh bahut important hai": "This is very important",
+    "yeh bahut zaroori hai": "This is very important",
+    "pura dhyan dein": "Pay full attention",
+    "chal shuru karte hain": "Let's start",
+    "class shuru hui": "Class has started",
+    "class khatam hui": "Class has ended",
+    "aaj ka topic": "Today's topic",
+    "aaj hamare paas": "Today we have",
+    "ek example dekhte hain": "Let's see an example",
+    "ek udaharan": "One example",
+    "ek udaharan dekho": "See one example",
+    "yeh samajhne ke liye": "To understand this",
+    "yeh padhenge": "We will study this",
+    "yeh sikhenge": "We will learn this",
+    "board par dekho": "Look at the board",
+    "kitab kholo": "Open the book",
+    "kitab band karo": "Close the book",
+    "pen uthao": "Pick up the pen",
+    "likho": "Write",
+    "padho": "Read",
+    "suno": "Listen",
+    "raho": "Wait / stay",
+    "thik hai": "Okay / Alright",
+    "sahi hai": "Correct",
+    "galat hai": "Incorrect",
+    "bahut accha": "Very good",
+    "shabash": "Well done",
+    "koi sawal": "Any question",
+    "koi sawal hai": "Any questions",
+    "sawal poocho": "Ask a question",
+    "doubt hai": "Have a doubt",
+    "doubt poocho": "Ask your doubt",
+})
 
 
 def _norm_key(text: str) -> str:
@@ -406,6 +453,20 @@ async def ws_endpoint(websocket: WebSocket):
                             "ts": time.time()
                         }
                         _add_recent_message(out)
+                        await manager.broadcast(json.dumps(out))
+                        continue
+
+                    if mtype == "draw":
+                        # Broadcast whiteboard drawing to ALL clients including sender
+                        out = {
+                            "type": "draw",
+                            "action": msg.get("action", "draw"),
+                            "x": msg.get("x", 0),
+                            "y": msg.get("y", 0),
+                            "color": msg.get("color", "#22d3ee"),
+                            "size": msg.get("size", 3),
+                            "ts": time.time()
+                        }
                         await manager.broadcast(json.dumps(out))
                         continue
 
