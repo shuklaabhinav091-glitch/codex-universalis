@@ -3,43 +3,190 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Maestro — Teacher Broadcast</title>
+<title>Maestro — Codex Universalis</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
     --bg: #020617;
     --panel: #0f172a;
+    --panel-hover: #1e293b;
     --border: #334155;
+    --border-focus: #22d3ee;
     --accent: #22d3ee;
-    --accent-hover: #67e8f9;
+    --accent-glow: rgba(34, 211, 238, 0.4);
     --text: #f8fafc;
     --muted: #94a3b8;
-    --danger: #ef4444;
     --success: #22c55e;
+    --danger: #ef4444;
     --purple: #a855f7;
+    --purple-glow: rgba(168, 85, 247, 0.4);
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
-  body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-  header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; display: flex; align-items: center; gap: 1rem; flex-shrink: 0; }
-  header h1 { color: var(--accent); font-size: 1.1rem; letter-spacing: 0.12em; font-weight: 700; text-transform: uppercase; }
-  header .dot { width: 8px; height: 8px; background: var(--success); border-radius: 50%; animation: ping 2s infinite; }
-  @keyframes ping { 0% { transform: scale(1); opacity: 1; } 75% { transform: scale(2); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
-  main { flex: 1; padding: 2rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1.25rem; }
-  .status { font-size: 0.85rem; color: var(--muted); padding: 0.6rem 1rem; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; width: fit-content; }
-  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; }
-  .textarea-wrap { background: #020617; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; flex: 1; display: flex; flex-direction: column; gap: 0.75rem; }
-  textarea { flex: 1; background: transparent; border: none; border-radius: 6px; padding: 0; color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1rem; resize: vertical; outline: none; line-height: 1.6; min-height: 200px; }
+  @keyframes ping {
+    0% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 var(--accent-glow); }
+    75% { transform: scale(2.5); opacity: 0; box-shadow: 0 0 0 12px transparent; }
+    100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 transparent; }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 1rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-shrink: 0;
+    z-index: 10;
+  }
+  header h1 {
+    color: var(--accent);
+    font-size: 1rem;
+    letter-spacing: 0.14em;
+    font-weight: 700;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  header .dot {
+    width: 8px; height: 8px;
+    background: var(--success);
+    border-radius: 50%;
+    animation: ping 2.5s infinite;
+  }
+  main {
+    flex: 1;
+    padding: 2rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+  .status {
+    font-size: 0.8rem;
+    color: var(--muted);
+    padding: 0.55rem 1rem;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    width: fit-content;
+    margin-bottom: 0.25rem;
+    backdrop-filter: blur(4px);
+  }
+  .status.online { color: var(--success); border-color: var(--success); box-shadow: 0 0 12px var(--accent-glow); }
+  .status.offline { color: var(--danger); border-color: var(--danger); }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem;
+    backdrop-filter: blur(8px);
+    animation: slideUp 0.4s ease;
+  }
+  .badge {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    font-weight: 800;
+    margin-bottom: 0.6rem;
+    display: block;
+  }
+  .textarea-wrap {
+    background: #020617;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    min-height: 260px;
+  }
+  textarea {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 0;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 1rem;
+    resize: vertical;
+    outline: none;
+    line-height: 1.7;
+    min-height: 160px;
+    flex: 1;
+  }
   textarea::placeholder { color: var(--muted); }
-  .btn-group { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
-  button { border: none; border-radius: 8px; padding: 0.75rem 1.5rem; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-  .btn-primary { background: var(--accent); color: #020617; }
-  .btn-primary:hover:not(:disabled) { background: var(--accent-hover); transform: translateY(-1px); }
-  .btn-dictate { background: var(--purple); color: #fff; }
-  .btn-dictate:hover:not(:disabled) { background: #c026d3; transform: translateY(-1px); }
-  .btn-dictate.listening { background: var(--danger); animation: pulse 1.5s infinite; }
-  @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
-  .hint { font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; }
-  .badge { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); font-weight: 700; margin-bottom: 0.5rem; }
+  textarea:focus { box-shadow: 0 0 0 3px var(--accent-glow); }
+  .btn-group {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  button {
+    border: none;
+    border-radius: 10px;
+    padding: 0.8rem 1.6rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.18s;
+    white-space: nowrap;
+    letter-spacing: 0.02em;
+  }
+  button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+  .btn-primary {
+    background: var(--accent);
+    color: #020617;
+    box-shadow: 0 0 14px var(--accent-glow);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: #67e8f9;
+    transform: translateY(-2px);
+    box-shadow: 0 0 20px var(--accent-glow);
+  }
+  .btn-dictate {
+    background: var(--purple);
+    color: #fff;
+    box-shadow: 0 0 14px var(--purple-glow);
+  }
+  .btn-dictate:hover:not(:disabled) {
+    background: #c026d3;
+    transform: translateY(-2px);
+    box-shadow: 0 0 20px var(--purple-glow);
+  }
+  .btn-dictate.listening {
+    background: var(--danger);
+    animation: pulse 1.4s infinite;
+  }
+  .hint {
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-top: 0.35rem;
+    line-height: 1.5;
+  }
 </style>
 </head>
 <body>
@@ -48,10 +195,10 @@
   <h1>MAESTRO</h1>
 </header>
 <main>
-  <div id="status" class="status">Connecting&hellip;</div>
+  <div id="status" class="status offline">Disconnected</div>
 
   <div class="card">
-    <div class="badge">Lesson Notes</div>
+    <span class="badge">Lesson Notes</span>
     <div class="textarea-wrap">
       <textarea id="note" rows="6" placeholder="Type your lesson notes here&hellip;"></textarea>
     </div>
@@ -61,7 +208,7 @@
     <button id="broadcast" class="btn-primary" disabled>Broadcast</button>
     <button id="dictate" class="btn-dictate" disabled>Dictate</button>
   </div>
-  <div class="hint">Broadcast sends text to all apprentices. Dictate captures speech and generates a diagram.</div>
+  <div class="hint">Broadcast sends notes to every apprentice instantly. Dictate turns speech into a live diagram.</div>
 </main>
 <script>
 const ws = new WebSocket(`ws://${location.host}/ws`);
@@ -72,9 +219,13 @@ const dictateBtn = document.getElementById('dictate');
 
 let recognition = null;
 
+function setStatus(online, text) {
+  status.textContent = text;
+  status.className = 'status ' + (online ? 'online' : 'offline');
+}
+
 ws.onopen = () => {
-  status.textContent = 'Connected — ready to broadcast.';
-  status.style.color = 'var(--success)';
+  setStatus(true, 'Connected — ready to broadcast.');
   btn.disabled = false;
   const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
   if (SpeechRecognition) {
@@ -105,17 +256,17 @@ ws.onopen = () => {
     dictateBtn.disabled = false;
   } else {
     dictateBtn.disabled = false;
+    dictateBtn.title = 'Speech not supported in this browser';
   }
 };
 ws.onclose = () => {
-  status.textContent = 'Disconnected.';
-  status.style.color = 'var(--danger)';
+  setStatus(false, 'Disconnected.');
   btn.disabled = true;
   dictateBtn.disabled = true;
+  setTimeout(() => { window.location.reload(); }, 3000);
 };
 ws.onerror = () => {
-  status.textContent = 'Connection error.';
-  status.style.color = 'var(--danger)';
+  setStatus(false, 'Connection error.');
   btn.disabled = true;
   dictateBtn.disabled = true;
 };
@@ -125,7 +276,12 @@ btn.onclick = () => {
   if (!text) return;
   ws.send(text);
   btn.textContent = 'Broadcasting…';
-  setTimeout(() => { btn.textContent = 'Broadcast'; }, 800);
+  btn.disabled = true;
+  setTimeout(() => {
+    btn.textContent = 'Broadcast';
+    btn.disabled = false;
+    textarea.value = '';
+  }, 700);
 };
 
 dictateBtn.onclick = () => {
