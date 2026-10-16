@@ -1,8 +1,11 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from pathlib import Path
-from deep_translator import GoogleTranslator
+from deep_translator import GoogleTranslator, MyMemoryTranslator
 import time
+
+# In-memory translation cache: keyed by (lang, text)
+_translate_cache: dict[tuple[str, str], str] = {}
 
 app = FastAPI()
 BASE_DIR = Path(__file__).parent
@@ -31,12 +34,43 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+def _try_mymemory(text: str, target: str) -> str:
+    """Try MyMemoryTranslator with specific region codes, then language names."""
+    candidates = {
+        'mr': ['mr-IN', 'marathi'],
+        'hi': ['hi-IN', 'hindi'],
+    }.get(target, [target])
+    last_err = None
+    for code in candidates:
+        try:
+            return MyMemoryTranslator(source='en-GB', target=code).translate(text)
+        except Exception as e:
+            last_err = e
+            continue
+    raise last_err if last_err else Exception("MyMemoryTranslator failed")
+
+
 def translate_safe(text: str, target: str) -> str:
-    """Translate text to target language. On any error, return original text."""
+    """Translate text to target language via chain: Google → MyMemory → original.
+    Never crashes the server. Results cached by (lang, text)."""
+    cache_key = (target, text)
+    if cache_key in _translate_cache:
+        return _translate_cache[cache_key]
+
+    result = text
+    # 1. GoogleTranslator
     try:
-        return GoogleTranslator(source='auto', target=target).translate(text)
+        result = GoogleTranslator(source='auto', target=target).translate(text)
     except Exception:
-        return text
+        # 2. MyMemoryTranslator fallback chain
+        try:
+            result = _try_mymemory(text, target)
+        except Exception:
+            # 3. Final fallback: original text
+            result = text
+
+    _translate_cache[cache_key] = result
+    return result
 
 @app.get("/maestro.html")
 async def maestro():
