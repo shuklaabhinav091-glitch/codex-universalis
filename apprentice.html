@@ -30,6 +30,25 @@
   .diagram { width: 100%; max-height: 40vh; overflow: auto; border: 1px solid #45a29e; border-radius: 8px; padding: 0.5rem; background: #0b0c10; margin-top: 0.75rem; }
   .diagram .mermaid { margin: 0; }
   .diagram-title { font-size: 0.8rem; color: #66fcf1; margin-bottom: 0.4rem; font-weight: 600; letter-spacing: 0.05em; }
+
+  /* ---------- Avatar Professor ---------- */
+  .avatar-row { display: flex; gap: 1rem; align-items: flex-start; margin-top: 0.75rem; }
+  .avatar-card { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+  .avatar-controls { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  #upload-face { display: none; }
+  .avatar-canvas-wrap { position: relative; border: 1px solid #45a29e; border-radius: 8px; background: #0b0c10; }
+  #avatar-canvas { border-radius: 6px; max-width: 180px; max-height: 220px; display: block; }
+  #avatar-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; border-radius: 6px; }
+  .speech-bubble { background: #45a29e; color: #0b0c10; border-radius: 12px 12px 12px 4px; padding: 0.75rem 1rem; font-size: 0.9rem; line-height: 1.4; max-width: 260px; box-shadow: 0 4px 12px rgba(69,162,158,0.35); position: relative; }
+  .speech-bubble::after { content: ''; position: absolute; top: 14px; left: -10px; border-width: 10px 10px 10px 0; border-style: solid; border-color: transparent #45a29e transparent transparent; }
+  @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+  .speaking { animation: bounce 1.2s ease-in-out infinite; }
+  .btn-upload, .btn-revision { background: #7c3aed; color: #ffffff; border: none; border-radius: 6px; padding: 0.5rem 1rem; font-size: 0.85rem; cursor: pointer; }
+  .btn-upload:hover, .btn-revision:hover { background: #a855f7; }
+  .btn-upload:disabled, .btn-revision:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-revision.speaking { background: #ef4444; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+  .avatar-hint { font-size: 0.7rem; color: #666; text-align: center; max-width: 200px; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
@@ -48,6 +67,25 @@
     <textarea id="marginalia" placeholder="Your private notes here. Never sent to the server."></textarea>
     <div class="hint">This textarea is local only — nothing you type here leaves your browser.</div>
   </div>
+
+  <!-- Avatar Professor Section -->
+  <div class="avatar-row">
+    <div class="avatar-card">
+      <div class="avatar-controls">
+        <label class="btn-upload" for="upload-face">Upload Face</label>
+        <input type="file" id="upload-face" accept="image/*">
+        <button class="btn-revision" id="btn-revision">Revision Mode</button>
+      </div>
+      <div class="avatar-canvas-wrap">
+        <canvas id="avatar-canvas" width="180" height="220"></canvas>
+        <svg id="avatar-svg" width="180" height="220"></svg>
+      </div>
+      <div class="avatar-hint">Upload a photo, then tap Revision Mode to hear from your avatar professor.</div>
+    </div>
+    <div class="speech-bubble" id="speech-bubble" style="display:none;">
+      <span id="speech-text"></span>
+    </div>
+  </div>
 </main>
 <script>
 mermaid.initialize({ startOnLoad: false, theme: 'neutral', look: 'handDrawn' });
@@ -55,8 +93,94 @@ mermaid.initialize({ startOnLoad: false, theme: 'neutral', look: 'handDrawn' });
 const ws = new WebSocket(`ws://${location.host}/ws`);
 const status = document.getElementById('status');
 const feed = document.getElementById('feed');
-let messages = []; // stored messages: {en, mr, hi, ts} or {type:'mermaid', code, ts}
+let messages = [];
 let currentLang = 'en';
+
+// Avatar elements
+const uploadFace = document.getElementById('upload-face');
+const btnUpload = document.querySelector('.btn-upload');
+const canvas = document.getElementById('avatar-canvas');
+const svg = document.getElementById('avatar-svg');
+const wrap = document.querySelector('.avatar-canvas-wrap');
+const ctx = canvas.getContext('2d');
+const btnRevision = document.getElementById('btn-revision');
+const speechBubble = document.getElementById('speech-bubble');
+const speechText = document.getElementById('speech-text');
+
+// Default stick figure SVG (no face uploaded)
+const DEFAULT_STICK = `
+<svg width="180" height="220" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="90" cy="45" r="25" fill="none" stroke="#66fcf1" stroke-width="3"/>
+  <line x1="90" y1="70" x2="90" y2="130" stroke="#66fcf1" stroke-width="3"/>
+  <line x1="90" y1="85" x2="55" y2="110" stroke="#66fcf1" stroke-width="3"/>
+  <line x1="90" y1="85" x2="125" y2="110" stroke="#66fcf1" stroke-width="3"/>
+  <line x1="90" y1="130" x2="65" y2="190" stroke="#66fcf1" stroke-width="3"/>
+  <line x1="90" y1="130" x2="115" y2="190" stroke="#66fcf1" stroke-width="3"/>
+</svg>`;
+
+let avatarImage = null; // loaded Image object
+let avatarFacePos = { cx: 90, cy: 45, r: 25 }; // default face position
+let isSpeaking = false;
+
+// Load saved avatar from localStorage
+const saved = localStorage.getItem('avatar_face');
+if (saved) {
+  avatarImage = new Image();
+  avatarImage.onload = () => drawAvatar();
+  avatarImage.src = saved;
+} else {
+  svg.innerHTML = DEFAULT_STICK;
+}
+
+function drawAvatar() {
+  // Clear canvas
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Draw uploaded image scaled to fit
+  if (avatarImage) {
+    const scale = Math.min(canvas.width / avatarImage.width, canvas.height / avatarImage.height);
+    const x = (canvas.width - avatarImage.width * scale) / 2;
+    const y = (canvas.height - avatarImage.height * scale) / 2;
+    ctx.drawImage(avatarImage, x, y, avatarImage.width * scale, avatarImage.height * scale);
+    // Estimate face position (top center area)
+    avatarFacePos = {
+      cx: x + avatarImage.width * scale / 2,
+      cy: y + avatarImage.height * scale * 0.25,
+      r: avatarImage.width * scale * 0.15
+    };
+  } else {
+    avatarFacePos = { cx: 90, cy: 45, r: 25 };
+  }
+
+  // Draw stick figure overlay on SVG
+  const cx = avatarFacePos.cx;
+  const cy = avatarFacePos.cy;
+  const r = avatarFacePos.r;
+  svg.innerHTML = `
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#66fcf1" stroke-width="3"/>
+    <line x1="${cx}" y1="${cy + r}" x2="${cx}" y2="${cy + r + 55}" stroke="#66fcf1" stroke-width="3"/>
+    <line x1="${cx}" y1="${cy + r + 15}" x2="${cx - 35}" y2="${cy + r + 40}" stroke="#66fcf1" stroke-width="3"/>
+    <line x1="${cx}" y1="${cy + r + 15}" x2="${cx + 35}" y2="${cy + r + 40}" stroke="#66fcf1" stroke-width="3"/>
+    <line x1="${cx}" y1="${cy + r + 55}" x2="${cx - 25}" y2="${cy + r + 105}" stroke="#66fcf1" stroke-width="3"/>
+    <line x1="${cx}" y1="${cy + r + 55}" x2="${cx + 25}" y2="${cy + r + 105}" stroke="#66fcf1" stroke-width="3"/>
+  `;
+}
+
+// Upload face handler
+uploadFace.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    avatarImage = new Image();
+    avatarImage.onload = () => {
+      localStorage.setItem('avatar_face', ev.target.result);
+      drawAvatar();
+    };
+    avatarImage.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+});
 
 ws.onopen = () => {
   status.textContent = 'Connected — listening to maestro.';
@@ -75,6 +199,9 @@ ws.onmessage = (event) => {
   if (msg.type === 'mermaid') {
     messages.push(msg);
     renderMermaid(msg);
+  } else if (msg.type === 'revision') {
+    messages.push(msg);
+    showRevision(msg.text);
   } else {
     messages.push(msg);
     renderFeed();
@@ -86,7 +213,7 @@ function renderFeed() {
   if (empty) empty.remove();
   feed.innerHTML = '';
   [...messages].reverse().forEach(m => {
-    if (m.type === 'mermaid') return; // diagrams rendered separately
+    if (m.type === 'mermaid' || m.type === 'revision') return;
     const div = document.createElement('div');
     div.className = 'msg';
     const now = new Date(m.ts * 1000);
@@ -101,30 +228,45 @@ function renderFeed() {
 function renderMermaid(msg) {
   const empty = feed.querySelector('.empty');
   if (empty) empty.remove();
-
   const container = document.createElement('div');
   container.className = 'msg';
   container.style.borderBottom = '1px solid #212830';
   container.style.padding = '0.75rem 0';
-
   const now = new Date(msg.ts * 1000);
   const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
   const title = document.createElement('div');
   title.className = 'diagram-title';
   title.textContent = `[${time}] Voice Diagram`;
-
   const diagramDiv = document.createElement('div');
   diagramDiv.className = 'diagram';
   diagramDiv.innerHTML = `<div class="mermaid">${msg.code}</div>`;
-
   container.appendChild(title);
   container.appendChild(diagramDiv);
   feed.prepend(container);
-
   mermaid.init(undefined, diagramDiv.querySelector('.mermaid'));
   feed.scrollTop = feed.scrollHeight;
 }
+
+function showRevision(text) {
+  speechText.textContent = text;
+  speechBubble.style.display = 'block';
+  const card = document.querySelector('.avatar-card');
+  card.classList.add('speaking');
+  btnRevision.classList.add('speaking');
+  btnRevision.textContent = 'Speaking&hellip;';
+  setTimeout(() => {
+    card.classList.remove('speaking');
+    btnRevision.classList.remove('speaking');
+    btnRevision.textContent = 'Revision Mode';
+    speechBubble.style.display = 'none';
+  }, 6000);
+}
+
+btnRevision.addEventListener('click', () => {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'revision_request' }));
+  }
+});
 
 document.querySelectorAll('.lang-btn').forEach(btn => {
   btn.addEventListener('click', () => {

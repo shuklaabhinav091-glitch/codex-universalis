@@ -23,6 +23,16 @@ _translate_cache: dict[tuple[str, str], str] = {}
 _mermaid_cache: dict[str, str] = {}
 
 # ---------------------------------------------------------------------------
+# Recent messages buffer for revision mode (last 20)
+# ---------------------------------------------------------------------------
+_recent_messages: list[dict] = []
+
+def _add_recent_message(msg: dict):
+    _recent_messages.append(msg)
+    if len(_recent_messages) > 20:
+        _recent_messages.pop(0)
+
+# ---------------------------------------------------------------------------
 # L0 OFFLINE LEXICON — exact match, case-insensitive, punctuation-tolerant
 # ---------------------------------------------------------------------------
 LEXICON: dict[str, dict[str, str]] = {
@@ -180,6 +190,75 @@ def speak_to_mermaid(spoken_text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Avatar Professor — Revision Mode (NVIDIA LLM revision summary)
+# ---------------------------------------------------------------------------
+def _revision_nvidia(messages: list[dict]) -> str:
+    """Generate a 3-sentence revision summary from recent lecture messages."""
+    api_key = os.environ.get("NVIDIA_API_KEY")
+    if not api_key:
+        raise RuntimeError("NVIDIA_API_KEY not set in environment")
+
+    # Build context from recent messages (text content only)
+    context_parts = []
+    for m in messages:
+        if m.get("type") == "note":
+            context_parts.append(f"Teacher said: {m.get('en', '')}")
+        elif m.get("type") == "mermaid":
+            context_parts.append(f"Teacher drew a diagram: {m.get('code', '')[:200]}")
+
+    context = "\n".join(context_parts) if context_parts else "No lecture content yet."
+
+    system_prompt = (
+        "Create a 3-sentence revision summary of this lecture in simple English. "
+        "Make it sound like a teacher explaining to a student. Output ONLY the summary."
+    )
+
+    payload = {
+        "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Lecture content:\n{context}"},
+        ],
+        "temperature": 0.3,
+        "max_tokens": 300,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    resp = requests.post(
+        "https://integrate.api.nvidia.com/v1/chat/completions",
+        headers=headers,
+        json=payload,
+        timeout=10,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    return data["choices"][0]["message"]["content"].strip()
+
+
+def _fallback_revision(messages: list[dict]) -> str:
+    """Fallback revision summary when NVIDIA is unavailable."""
+    note_count = sum(1 for m in messages if m.get("type") == "note")
+    diagram_count = sum(1 for m in messages if m.get("type") == "mermaid")
+    return (
+        f"Today we covered {note_count} teaching point{'s' if note_count != 1 else ''} "
+        f"and {diagram_count} diagram{'s' if diagram_count != 1 else ''}. "
+        "Please review your notes and the diagrams shared during class. "
+        "Come prepared with questions for our next session."
+    )
+
+
+def speak_revision(messages: list[dict]) -> str:
+    """Generate revision summary: NVIDIA → fallback → never crash."""
+    try:
+        return _revision_nvidia(messages)
+    except Exception:
+        return _fallback_revision(messages)
+
+
+# ---------------------------------------------------------------------------
 # L3 MyMemoryTranslator fallback chain
 # ---------------------------------------------------------------------------
 def _try_mymemory(text: str, target: str) -> str:
@@ -299,18 +378,35 @@ async def ws_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
-            # Try to parse as JSON voice message
+            # Try to parse as JSON message
             try:
                 msg = json.loads(data)
-                if isinstance(msg, dict) and msg.get("type") == "voice":
-                    spoken_text = msg.get("text", "")
-                    mermaid_code = speak_to_mermaid(spoken_text)
-                    await manager.broadcast(json.dumps({
-                        "type": "mermaid",
-                        "code": mermaid_code,
-                        "ts": time.time()
-                    }))
-                    continue
+                if isinstance(msg, dict):
+                    mtype = msg.get("type")
+
+                    if mtype == "voice":
+                        spoken_text = msg.get("text", "")
+                        mermaid_code = speak_to_mermaid(spoken_text)
+                        out = {
+                            "type": "mermaid",
+                            "code": mermaid_code,
+                            "ts": time.time()
+                        }
+                        _add_recent_message(out)
+                        await manager.broadcast(json.dumps(out))
+                        continue
+
+                    if mtype == "revision_request":
+                        summary = speak_revision(list(_recent_messages))
+                        out = {
+                            "type": "revision",
+                            "text": summary,
+                            "ts": time.time()
+                        }
+                        _add_recent_message(out)
+                        await manager.broadcast(json.dumps(out))
+                        continue
+
             except (json.JSONDecodeError, AttributeError):
                 pass
 
@@ -325,6 +421,7 @@ async def ws_endpoint(websocket: WebSocket):
                 "hi": hi,
                 "ts": time.time()
             }
+            _add_recent_message(payload)
             await manager.broadcast(json.dumps(payload))
     except WebSocketDisconnect:
         manager.disconnect(websocket)
