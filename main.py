@@ -1,14 +1,195 @@
+import os
+import re
+import time
+import json
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from pathlib import Path
 from deep_translator import GoogleTranslator, MyMemoryTranslator
-import time
-
-# In-memory translation cache: keyed by (lang, text)
-_translate_cache: dict[tuple[str, str], str] = {}
+import requests
 
 app = FastAPI()
 BASE_DIR = Path(__file__).parent
+
+# ---------------------------------------------------------------------------
+# In-memory translation cache: keyed by (lang, text)
+# ---------------------------------------------------------------------------
+_translate_cache: dict[tuple[str, str], str] = {}
+
+# ---------------------------------------------------------------------------
+# L0 OFFLINE LEXICON — exact match, case-insensitive, punctuation-tolerant
+# ---------------------------------------------------------------------------
+LEXICON: dict[str, dict[str, str]] = {
+    "the water cycle has four stages": {
+        "mr": "पाणी चक्रात चार टप्पे असतात.",
+        "hi": "जल चक्र में चार चरण होते हैं।",
+    },
+    "evaporation turns water into vapor": {
+        "mr": "बाष्पीभवनामुळे पाण्याची वाफ बनते.",
+        "hi": "वाष्पीकरण से पानी वाष्प बनता है।",
+    },
+    "condensation forms clouds in the sky": {
+        "mr": "संघननामुळे आकाशात ढग तयार होतात.",
+        "hi": "संघनन से आकाश में बादल बनते हैं।",
+    },
+    "precipitation falls as rain": {
+        "mr": "वर्षाव म्हणून पाऊस पडतो.",
+        "hi": "वर्षा के रूप में बारिश गिरती है।",
+    },
+    "good morning students today we study the water cycle": {
+        "mr": "सुप्रभात विद्यार्थ्यांनो, आज आपण पाणी चक्राचा अभ्यास करू.",
+        "hi": "सुप्रभात विद्यार्थियों, आज हम जल चक्र का अध्ययन करेंगे।",
+    },
+}
+
+
+def _norm_key(text: str) -> str:
+    """Normalize for lexicon lookup: lowercase, strip trailing punctuation/whitespace."""
+    return re.sub(r'[.!?\s]+$', '', text.strip().lower())
+
+
+# ---------------------------------------------------------------------------
+# L1 NVIDIA LLM translator
+# ---------------------------------------------------------------------------
+def _translate_nvidia(text: str, target: str) -> str:
+    """POST to NVIDIA API integrate.chat.completions. Hard 8s timeout."""
+    api_key = os.environ.get("NVIDIA_API_KEY")
+    if not api_key:
+        raise RuntimeError("NVIDIA_API_KEY not set in environment")
+
+    target_name = {"mr": "Marathi", "hi": "Hindi"}.get(target, target)
+    system_prompt = f"Translate the user text into {target_name}. Output ONLY the translated text."
+
+    payload = {
+        "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text},
+        ],
+        "temperature": 0.2,
+        "max_tokens": 500,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    resp = requests.post(
+        "https://integrate.api.nvidia.com/v1/chat/completions",
+        headers=headers,
+        json=payload,
+        timeout=8,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    return data["choices"][0]["message"]["content"].strip()
+
+
+# ---------------------------------------------------------------------------
+# L3 MyMemoryTranslator fallback chain
+# ---------------------------------------------------------------------------
+def _try_mymemory(text: str, target: str) -> str:
+    """Try MyMemoryTranslator with specific region codes, then language names."""
+    candidates = {
+        'mr': ['mr-IN', 'marathi'],
+        'hi': ['hi-IN', 'hindi'],
+    }.get(target, [target])
+    last_err = None
+    for code in candidates:
+        try:
+            return MyMemoryTranslator(source='en-GB', target=code).translate(text)
+        except Exception as e:
+            last_err = e
+            continue
+    raise last_err if last_err else Exception("MyMemoryTranslator failed")
+
+
+# ---------------------------------------------------------------------------
+# 4-layer translate chain: L0 lexicon → L1 NVIDIA → L2 Google → L3 MyMemory → L4 original
+# ---------------------------------------------------------------------------
+def translate_safe(text: str, target: str) -> str:
+    """Translate text via 4-layer chain. Never crashes the server.
+    Caches every successful translation from any layer."""
+    cache_key = (target, text)
+    if cache_key in _translate_cache:
+        return _translate_cache[cache_key]
+
+    result = text
+
+    # L0: Offline lexicon (exact match, case-insensitive)
+    try:
+        lex_entry = LEXICON.get(_norm_key(text), {})
+        if target in lex_entry:
+            result = lex_entry[target]
+    except Exception:
+        pass
+
+    # L1: NVIDIA LLM
+    if result == text:
+        try:
+            result = _translate_nvidia(text, target)
+        except Exception:
+            pass
+
+    # L2: GoogleTranslator
+    if result == text:
+        try:
+            result = GoogleTranslator(source='auto', target=target).translate(text)
+        except Exception:
+            pass
+
+    # L3: MyMemoryTranslator
+    if result == text:
+        try:
+            result = _try_mymemory(text, target)
+        except Exception:
+            pass
+
+    # L4: original text (already in `result`)
+
+    if result != text:
+        _translate_cache[cache_key] = result
+    return result
+
+
+# ---------------------------------------------------------------------------
+# FastAPI routes
+# ---------------------------------------------------------------------------
+@app.get("/maestro.html")
+async def maestro():
+    return FileResponse(BASE_DIR / "maestro.html")
+
+
+@app.get("/apprentice.html")
+async def apprentice():
+    return FileResponse(BASE_DIR / "apprentice.html")
+
+
+@app.get("/")
+async def root():
+    return {"status": "ok", "endpoints": ["/maestro.html", "/apprentice.html", "/ws"]}
+
+
+@app.websocket("/ws")
+async def ws_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            original = data
+            mr = translate_safe(original, 'mr')
+            hi = translate_safe(original, 'hi')
+            payload = {
+                "type": "note",
+                "en": original,
+                "mr": mr,
+                "hi": hi,
+                "ts": time.time()
+            }
+            await manager.broadcast(json.dumps(payload))
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
 
 class ConnectionManager:
     def __init__(self):
@@ -32,78 +213,9 @@ class ConnectionManager:
         for ws in dead:
             self.disconnect(ws)
 
+
 manager = ConnectionManager()
 
-def _try_mymemory(text: str, target: str) -> str:
-    """Try MyMemoryTranslator with specific region codes, then language names."""
-    candidates = {
-        'mr': ['mr-IN', 'marathi'],
-        'hi': ['hi-IN', 'hindi'],
-    }.get(target, [target])
-    last_err = None
-    for code in candidates:
-        try:
-            return MyMemoryTranslator(source='en-GB', target=code).translate(text)
-        except Exception as e:
-            last_err = e
-            continue
-    raise last_err if last_err else Exception("MyMemoryTranslator failed")
-
-
-def translate_safe(text: str, target: str) -> str:
-    """Translate text to target language via chain: Google → MyMemory → original.
-    Never crashes the server. Results cached by (lang, text)."""
-    cache_key = (target, text)
-    if cache_key in _translate_cache:
-        return _translate_cache[cache_key]
-
-    result = text
-    # 1. GoogleTranslator
-    try:
-        result = GoogleTranslator(source='auto', target=target).translate(text)
-    except Exception:
-        # 2. MyMemoryTranslator fallback chain
-        try:
-            result = _try_mymemory(text, target)
-        except Exception:
-            # 3. Final fallback: original text
-            result = text
-
-    _translate_cache[cache_key] = result
-    return result
-
-@app.get("/maestro.html")
-async def maestro():
-    return FileResponse(BASE_DIR / "maestro.html")
-
-@app.get("/apprentice.html")
-async def apprentice():
-    return FileResponse(BASE_DIR / "apprentice.html")
-
-@app.get("/")
-async def root():
-    return {"status": "ok", "endpoints": ["/maestro.html", "/apprentice.html", "/ws"]}
-
-@app.websocket("/ws")
-async def ws_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
-    try:
-        while True:
-            data = await websocket.receive_text()
-            original = data
-            mr = translate_safe(original, 'mr')
-            hi = translate_safe(original, 'hi')
-            payload = {
-                "type": "note",
-                "en": original,
-                "mr": mr,
-                "hi": hi,
-                "ts": time.time()
-            }
-            import json
-            await manager.broadcast(json.dumps(payload))
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
 
 if __name__ == "__main__":
     import uvicorn
