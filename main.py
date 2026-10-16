@@ -1,6 +1,8 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from pathlib import Path
+from deep_translator import GoogleTranslator
+import time
 
 app = FastAPI()
 BASE_DIR = Path(__file__).parent
@@ -29,6 +31,13 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+def translate_safe(text: str, target: str) -> str:
+    """Translate text to target language. On any error, return original text."""
+    try:
+        return GoogleTranslator(source='auto', target=target).translate(text)
+    except Exception:
+        return text
+
 @app.get("/maestro.html")
 async def maestro():
     return FileResponse(BASE_DIR / "maestro.html")
@@ -47,7 +56,18 @@ async def ws_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
-            await manager.broadcast(data)
+            original = data
+            mr = translate_safe(original, 'mr')
+            hi = translate_safe(original, 'hi')
+            payload = {
+                "type": "note",
+                "en": original,
+                "mr": mr,
+                "hi": hi,
+                "ts": time.time()
+            }
+            import json
+            await manager.broadcast(json.dumps(payload))
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
